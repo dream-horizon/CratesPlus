@@ -1,132 +1,186 @@
 package plus.crates.Listeners;
 
+import java.util.HashMap;
+import java.util.concurrent.TimeUnit;
+
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
-import plus.crates.Crates.Crate;
-import plus.crates.Crates.KeyCrate;
+import org.bukkit.inventory.meta.ItemMeta;
+
+import plus.crates.Crate;
 import plus.crates.CratesPlus;
 import plus.crates.Events.CrateOpenEvent;
-import plus.crates.Handlers.MessageHandler;
-
-import java.util.HashMap;
-import java.util.concurrent.TimeUnit;
+import plus.crates.Events.CratePreviewEvent;
 
 public class PlayerInteract implements Listener {
-    private CratesPlus cratesPlus;
-    private HashMap<String, Long> lastOpended = new HashMap<String, Long>();
+	private final CratesPlus cratesPlus;
+	private final HashMap<String, Long> lastOpended = new HashMap<>();
 
-    public PlayerInteract(CratesPlus cratesPlus) {
-        this.cratesPlus = cratesPlus;
-    }
+	public PlayerInteract(CratesPlus cratesPlus) {
+		this.cratesPlus = cratesPlus;
+	}
 
-    @EventHandler(ignoreCancelled = true)
-    public void onPlayerInteract(PlayerInteractEvent event) {
-        Player player = event.getPlayer();
-        if (event.getClickedBlock() == null || event.getClickedBlock().getType() == Material.AIR)
-            return;
-        ItemStack item = cratesPlus.getVersion_util().getItemInPlayersHand(player);
-        ItemStack itemOff = cratesPlus.getVersion_util().getItemInPlayersOffHand(player);
+	@EventHandler(ignoreCancelled = true)
+	public void onPlayerInteract(PlayerInteractEvent e) {
 
-        String crateType;
-        if (event.getClickedBlock().getMetadata("CrateType").isEmpty()) {
-            // Try to use the old method of getting the crate!
-            if (event.getClickedBlock().getType() != Material.CHEST)
-                return;
-            Chest chest = (Chest) event.getClickedBlock().getState();
-            String title = chest.getCustomName();
-            if (title == null || !title.contains(" Crate"))
-                return;
-            crateType = ChatColor.stripColor(title.replaceAll(" Crate", ""));
-        } else {
-            crateType = event.getClickedBlock().getMetadata("CrateType").get(0).asString();
-        }
+		Player p = e.getPlayer();
 
-        if (!cratesPlus.getConfig().isSet("Crates." + crateType)) {
-            return;
-        }
+		if (!e.getAction().toString().endsWith("_CLICK_BLOCK")) {
+			return;
+		}
 
-        Crate crate = cratesPlus.getConfigHandler().getCrates().get(crateType.toLowerCase());
+		Block clickedBlock = e.getClickedBlock();
+		ItemStack item = cratesPlus.getVersion_util().getItemInPlayersHand(p);
+		ItemStack itemOff = cratesPlus.getVersion_util().getItemInPlayersOffHand(p);
 
-        if (crate == null) {
-            return; // Not sure if we should do some warning here? TODO
-        }
+		String crateType;
+		if (!clickedBlock.hasMetadata("CrateType") || clickedBlock.getMetadata("CrateType").isEmpty()) {
+			// Try to use the old method of getting the crate!
+			if (clickedBlock.getType() != Material.CHEST) {
+				return;
+			}
 
-        if (!(crate instanceof KeyCrate)) {
-            return;
-        }
+			Chest chest = (Chest) e.getClickedBlock().getState();
+			String title = chest.getCustomName();
+			if (title == null || !title.contains(" Crate!")) {
+				return;
+			}
 
-        KeyCrate keyCrate = (KeyCrate) crate;
+			crateType = ChatColor.stripColor(title.replaceAll(" Crate!", ""));
+		} else {
+			crateType = clickedBlock.getMetadata("CrateType").get(0).asString();
+		}
 
-        if (crate.getPermission() != null && !player.hasPermission(crate.getPermission())) {
-            event.setCancelled(true);
-            MessageHandler.sendMessage(player, "&cYou do not have the correct permission to use this crate", crate, null);
-            return;
-        }
-        String title = ChatColor.stripColor(keyCrate.getKey().getName());
-        String lore = keyCrate.getKey().getLore().toString();
-        if (event.getAction().toString().contains("LEFT")) {
-            if (event.getPlayer().isSneaking())
-                return;
+		if (!cratesPlus.getConfig().isSet("Crates." + crateType)) {
+			return;
+		}
 
-            if (keyCrate.isPreview())
-                keyCrate.openPreviewGUI(player);
-        } else {
-            boolean usingOffHand = false;
-            if (itemOff != null && itemOff.hasItemMeta() && !itemOff.getType().equals(Material.AIR) && itemOff.getItemMeta().getDisplayName() != null && ChatColor.stripColor(itemOff.getItemMeta().getDisplayName()).equals(title)) {
-                item = itemOff;
-                usingOffHand = true;
-            }
+		Crate crate = cratesPlus.getConfigHandler().getCrates().get(crateType.toLowerCase());
 
-            if (cratesPlus.getCrateHandler().hasOpening(player.getUniqueId())) {
-                cratesPlus.getCrateHandler().getOpening(player.getUniqueId()).doReopen(player, crate, event.getClickedBlock().getLocation());
-                event.setCancelled(true);
-                return;
-            }
+		if (crate == null) {
+			return; // Not sure if we should do some warning here? TODO
+		}
 
-            if (item != null && item.hasItemMeta() && !item.getType().equals(Material.AIR) && item.getItemMeta().getDisplayName() != null && ChatColor.stripColor(item.getItemMeta().getDisplayName()).equals(title) && item.getItemMeta().hasLore() && item.getItemMeta().getLore().toString().equals(lore)) {
-                event.setCancelled(true);
+		if (crate.getPermission() != null && !p.hasPermission(crate.getPermission())) {
+			e.setCancelled(true);
+			p.sendMessage(cratesPlus.getPluginPrefix()
+					+ cratesPlus.getMessageHandler().getMessage("Crate No Permission", p, crate, null));
+			return;
+		}
+		String title = ChatColor.stripColor(crate.getKey().getName());
+		String lore = crate.getKey().getLore().toString();
+		if (e.getAction().toString().contains("LEFT")) {
+			if (e.getPlayer().isSneaking()) {
+				return;
+			}
+			/** Do preview */
+			CratePreviewEvent cratePreviewEvent = new CratePreviewEvent(p, crateType, cratesPlus);
+			if (!cratePreviewEvent.isCanceled()) {
+				cratePreviewEvent.doEvent();
+			}
+		} else {
 
-                if (player.getInventory().firstEmpty() == -1) {
-                    player.sendMessage(cratesPlus.getPluginPrefix() + ChatColor.RED + "You can't open a Crate while your inventory is full");
-                    return;
-                }
+			if (item == null && itemOff == null) {
+				p.sendMessage(cratesPlus.getPluginPrefix()
+						+ cratesPlus.getMessageHandler().getMessage("Crate Open Without Key", p, crate, null));
+				if (crate.getKnockback() != 0) {
+					p.setVelocity(p.getLocation().getDirection().multiply(-crate.getKnockback()));
+				}
+				e.setCancelled(true);
+			}
+			/** Opening of Crate **/
+			boolean usingOffHand = false;
+			if (itemOff != null && itemOff.hasItemMeta() && !itemOff.getType().equals(Material.AIR)
+					&& itemOff.getItemMeta().getDisplayName() != null
+					&& itemOff.getItemMeta().getDisplayName().equals(title)) {
+				item = itemOff;
+				usingOffHand = true;
+			}
 
-                // TODO add cooldown back!
-//				if (crate.getCooldown() > 0 && lastOpended.containsKey(player.getUniqueId().toString()) && lastOpended.get(player.getUniqueId().toString()) + crate.getCooldown() > TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())) {
-//					long whenCooldownEnds = lastOpended.get(player.getUniqueId().toString()) + cratesPlus.getConfigHandler().getDefaultCooldown();
-//					long remaining = whenCooldownEnds - TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis());
-//					player.sendMessage(cratesPlus.getPluginPrefix() + ChatColor.RED + "You must wait another " + remaining + " seconds before opening another crate");
-//					return;
-//				}
+			if (cratesPlus.getCrateHandler()
+					.hasOpening(p.getUniqueId())) { /** If already opening crate, show GUI for said crate **/
+				cratesPlus.getCrateHandler().getOpening(p.getUniqueId()).doReopen(p, crate,
+						e.getClickedBlock().getLocation());
+				e.setCancelled(true);
+				return;
+			}
 
-                lastOpended.put(player.getUniqueId().toString(), TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())); // Store time in seconds of when the player opened the crate
+			/** Checks if holding valid key **/
 
-                if (item.getAmount() > 1) {
-                    item.setAmount(item.getAmount() - 1);
-                } else {
-                    if (usingOffHand) {
-                        cratesPlus.getVersion_util().removeItemInOffHand(player);
-                    } else {
-                        player.setItemInHand(null);
-                    }
-                }
+			e.setCancelled(true);
 
-                CrateOpenEvent crateOpenEvent = new CrateOpenEvent(player, keyCrate, event.getClickedBlock().getLocation(), cratesPlus);
-                crateOpenEvent.doEvent();
-            } else {
-                MessageHandler.sendMessage(player, "&cYou must be holding a %crate% &ckey to open this crate", crate, null);
-                if (keyCrate.getKnockback() != 0) {
-                    player.setVelocity(player.getLocation().getDirection().multiply(-keyCrate.getKnockback()));
-                }
-                event.setCancelled(true);
-            }
-        }
-    }
+			if (!isKey(item, crate, title, lore)) { // Not valid key
+				p.sendMessage(cratesPlus.getPluginPrefix()
+						+ cratesPlus.getMessageHandler().getMessage("Crate Open Without Key", p, crate, null));
+				if (crate.getKnockback() != 0) {
+					p.setVelocity(p.getLocation().getDirection().multiply(-crate.getKnockback()));
+				}
+				return;
+			}
 
+			if (p.getInventory().firstEmpty() == -1) {
+				p.sendMessage(cratesPlus.getPluginPrefix() + ChatColor.RED
+						+ "You can't open a Crate while your inventory is full");
+				return;
+			}
+
+			long secondsNow = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis());
+
+			if (crate.getCooldown() > 0 && lastOpended.getOrDefault(p.getUniqueId().toString(), 0L)
+					+ crate.getCooldown() > secondsNow) {
+
+				long whenCooldownEnds = lastOpended.get(p.getUniqueId().toString())
+						+ cratesPlus.getConfigHandler().getDefaultCooldown();
+				long remaining = whenCooldownEnds - secondsNow;
+				p.sendMessage(cratesPlus.getPluginPrefix() + ChatColor.RED + "You must wait another "
+						+ remaining + " seconds before opening another crate");
+				return;
+			}
+
+			// Store time in seconds of when the player opened the crate
+			lastOpended.put(p.getUniqueId().toString(), secondsNow);
+
+			if (item.getAmount() > 1) {
+				item.setAmount(item.getAmount() - 1);
+			} else {
+				if (usingOffHand) {
+					cratesPlus.getVersion_util().removeItemInOffHand(p);
+				} else {
+					p.setItemInHand(null);
+				}
+			}
+
+			CrateOpenEvent crateOpenEvent = new CrateOpenEvent(p, crateType, e.getClickedBlock().getLocation(),
+					cratesPlus);
+			crateOpenEvent.doEvent();
+		}
+	}
+
+	private boolean isKey(ItemStack item, Crate crate, String title, String lore) {
+		if (item == null)
+			return false;
+		if (!item.hasItemMeta())
+			return false;
+
+		ItemMeta meta = item.getItemMeta();
+
+		if (!meta.hasDisplayName())
+			return false;
+		if (!ChatColor.stripColor(meta.getDisplayName()).equals(title))
+			return false;
+
+		if (!meta.hasLore())
+			return false;
+		if (!meta.getLore().toString().equals(lore))
+			return false;
+
+		return true;
+	}
 }
